@@ -8,6 +8,7 @@ from tkinter import Image
 from matplotlib import image
 import numpy as np
 import SimpleITK as sitk
+from nnunet.isles22_input import optional_single_image, require_single_image, resolve_input_root
 
 def json_writer(json_path, data):
     with open(str(json_path), "w") as f:
@@ -24,9 +25,9 @@ class ISLES22():
         adc_folder    = 'adc-brain-mri'
         flair_folder  = 'flair-brain-mri'
 
-        self.dwi_path   = glob(os.path.join(self.root, dwi_folder, '*.mha'))[0]
-        self.adc_path   = glob(os.path.join(self.root, adc_folder, '*.mha'))[0]
-        self.flair_path = glob(os.path.join(self.root, flair_folder, '*.mha'))[0]
+        self.dwi_path   = require_single_image(self.root, dwi_folder)
+        self.adc_path   = require_single_image(self.root, adc_folder)
+        self.flair_path = optional_single_image(self.root, flair_folder)
 
 def reimplement_resize(image_file, target_file, resample_method=sitk.sitkLinear):
     """
@@ -91,7 +92,7 @@ if __name__=='__main__':
         os.makedirs(output_folder)
 
     # load origin mha file path
-    raw_data_dir = 'input/images'
+    raw_data_dir = resolve_input_root()
     dataset_ISLES22 = ISLES22(raw_data_dir)
     dataset_ISLES22.load_data()
 

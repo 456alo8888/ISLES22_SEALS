@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implement Plan"
+  short_description: "Implement approved technical plans"
+  default_prompt: "Use $implement-plan to execute an approved implementation plan from thoughts/shared/plans."

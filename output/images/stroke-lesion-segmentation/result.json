@@ -1,0 +1,1 @@
+[{"outputs": [{"type": "Image", "slug": "stroke-lesion-segmentation", "filename": "dwi.mha"}], "inputs": [{"type": "Image", "slug": "dwi-brain-mri", "filename": "dwi.mha"}]}]

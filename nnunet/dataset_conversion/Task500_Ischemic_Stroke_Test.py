@@ -20,6 +20,7 @@ from batchgenerators.utilities.file_and_folder_operations import *
 from nnunet.dataset_conversion.utils import generate_dataset_json
 from nnunet.paths import nnUNet_raw_data, preprocessing_output_dir
 from nnunet.utilities.file_conversions import convert_2d_image_to_nifti
+from nnunet.isles22_input import optional_single_image, require_single_image, resolve_input_root
 
 class ISLES22():
     def __init__(self, root):
@@ -31,9 +32,9 @@ class ISLES22():
         adc_folder    = 'adc-brain-mri'
         flair_folder  = 'flair-brain-mri'
 
-        self.dwi_path   = glob(os.path.join(self.root, dwi_folder, '*.mha'))[0]
-        self.adc_path   = glob(os.path.join(self.root, adc_folder, '*.mha'))[0]
-        self.flair_path = glob(os.path.join(self.root, flair_folder, '*.mha'))[0]
+        self.dwi_path   = require_single_image(self.root, dwi_folder)
+        self.adc_path   = require_single_image(self.root, adc_folder)
+        self.flair_path = optional_single_image(self.root, flair_folder)
 
 
 def respacing_file(image_file, target_spacing, resample_method):
@@ -122,7 +123,7 @@ def reimplement_resize(image_file, target_file, resample_method=sitk.sitkLinear)
 if __name__ == "__main__":
 
     task_name = "Task500_Ischemic_Stroke_Test"
-    raw_data_dir = '/input/images'
+    raw_data_dir = resolve_input_root()
     dataset_ISLES22 = ISLES22(raw_data_dir)
     dataset_ISLES22.load_data()
 
@@ -154,5 +155,3 @@ if __name__ == "__main__":
                           dataset_name=task_name, 
                           sort_keys=True, 
                           license="ISLES22 license")
-
-

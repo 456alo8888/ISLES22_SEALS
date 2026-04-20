@@ -1,3 +1,15 @@
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+shim_so="$script_dir/libjitprofiling_shim.so"
+shim_src="$script_dir/jitprofiling_shim.c"
+gpu_id="${NNUNET_GPU:-${CUDA_VISIBLE_DEVICES:-0}}"
+
+if [ ! -f "$shim_so" ]; then
+    gcc -shared -fPIC -O2 "$shim_src" -o "$shim_so"
+fi
+
+export LD_PRELOAD="${shim_so}${LD_PRELOAD:+:$LD_PRELOAD}"
 export nnUNet_raw_data_base="data/nnUNet_raw_data_base"
 export nnUNet_preprocessed="data/nnUNet_preprocessed"
 export RESULTS_FOLDER="data/nnUNet_trained_models"
@@ -8,7 +20,7 @@ python nnunet/dataset_conversion/Task500_Ischemic_Stroke_Test.py
 nnUNet_change_trainer_class -i data/nnUNet_trained_models/nnUNet/3d_fullres/Task012_Ischemic_Stroke_TM_Fullset/nnUNetTrainerV2_DDP__nnUNetPlansv2.1 \
                             -tr nnUNetTrainerV2 \
 
-CUDA_VISIBLE_DEVICES=0 \
+CUDA_VISIBLE_DEVICES="$gpu_id" \
 nnUNet_predict \
                -i $nnUNet_raw_data_base/nnUNet_raw_data/Task500_Ischemic_Stroke_Test/imagesTs/ \
                -o test_result/preliminary_phase/fold0 \
@@ -19,7 +31,7 @@ nnUNet_predict \
                -z \
                --disable_postprocessing  
 
-CUDA_VISIBLE_DEVICES=0 \
+CUDA_VISIBLE_DEVICES="$gpu_id" \
 nnUNet_predict \
                -i $nnUNet_raw_data_base/nnUNet_raw_data/Task500_Ischemic_Stroke_Test/imagesTs/ \
                -o test_result/preliminary_phase/fold1 \
@@ -30,7 +42,7 @@ nnUNet_predict \
                -z \
                --disable_postprocessing
 
-CUDA_VISIBLE_DEVICES=0 \
+CUDA_VISIBLE_DEVICES="$gpu_id" \
 nnUNet_predict \
                -i $nnUNet_raw_data_base/nnUNet_raw_data/Task500_Ischemic_Stroke_Test/imagesTs/ \
                -o test_result/preliminary_phase/fold2 \
@@ -41,7 +53,7 @@ nnUNet_predict \
                -z \
                --disable_postprocessing
                
-CUDA_VISIBLE_DEVICES=0 \
+CUDA_VISIBLE_DEVICES="$gpu_id" \
 nnUNet_predict \
                -i $nnUNet_raw_data_base/nnUNet_raw_data/Task500_Ischemic_Stroke_Test/imagesTs/ \
                -o test_result/preliminary_phase/fold3 \
@@ -52,7 +64,7 @@ nnUNet_predict \
                -z \
                --disable_postprocessing
 
-CUDA_VISIBLE_DEVICES=0 \
+CUDA_VISIBLE_DEVICES="$gpu_id" \
 nnUNet_predict \
                -i $nnUNet_raw_data_base/nnUNet_raw_data/Task500_Ischemic_Stroke_Test/imagesTs/ \
                -o test_result/preliminary_phase/fold4 \
@@ -109,4 +121,3 @@ python -m ensemble_predictions -f $model_0 \
 python threshold_redirect.py \
                             -i test_ensemble/ \
                             -o output/images/stroke-lesion-segmentation/
-

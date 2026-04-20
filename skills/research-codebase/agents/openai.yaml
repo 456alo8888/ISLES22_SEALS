@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Codebase"
+  short_description: "Document the codebase as it exists"
+  default_prompt: "Use $research-codebase to document how a codebase works today for a specific question or area."
