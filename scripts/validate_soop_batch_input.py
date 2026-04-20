@@ -6,6 +6,10 @@ from pathlib import Path
 import SimpleITK as sitk
 
 
+def normalize_column_name(name):
+    return str(name).strip().lstrip("\ufeff[").rstrip("]")
+
+
 DEFAULT_CSV = "/mnt/disk1/hieupc/4gpus-Stroke-outcome-prediction-code/code/utils/SOOP_modalities_dataset.csv"
 
 
@@ -33,7 +37,10 @@ def main():
 
     with open(args.csv_path, "r", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
+        if reader.fieldnames:
+            reader.fieldnames = [normalize_column_name(name) for name in reader.fieldnames]
         for row in reader:
+            row = {normalize_column_name(key): value for key, value in row.items()}
             subject_id = row["subject_id"].strip()
             if subset and subject_id not in subset:
                 continue

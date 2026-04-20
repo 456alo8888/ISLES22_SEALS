@@ -7,6 +7,9 @@ gpu_id="${NNUNET_GPU:-${CUDA_VISIBLE_DEVICES:-0}}"
 batch_input_root="${BATCH_INPUT_ROOT:-input}"
 task_name="${NNUNET_TASK_NAME:-Task500_Ischemic_Stroke_Test}"
 batch_output_root="${BATCH_OUTPUT_ROOT:-output/batch/images/stroke-lesion-segmentation}"
+batch_test_result="${BATCH_TEST_RESULT:-test_result_batch}"
+batch_test_result_recover="${BATCH_TEST_RESULT_RECOVER:-test_result_recover_batch}"
+batch_test_ensemble="${BATCH_TEST_ENSEMBLE:-test_ensemble_batch}"
 case_manifest="$script_dir/data/nnUNet_raw_data_base/nnUNet_raw_data/${task_name}/case_manifest.json"
 
 if [ ! -f "$shim_so" ]; then
@@ -31,7 +34,7 @@ for fold in 0 1 2 3 4; do
     CUDA_VISIBLE_DEVICES="$gpu_id" \
     nnUNet_predict \
         -i "$nnUNet_raw_data_base/nnUNet_raw_data/${task_name}/imagesTs/" \
-        -o "test_result/preliminary_phase/fold${fold}" \
+        -o "${batch_test_result}/preliminary_phase/fold${fold}" \
         -t 12 \
         -tr nnUNetTrainerV2_DDP \
         -m 3d_fullres \
@@ -43,23 +46,23 @@ done
 
 for fold in 0 1 2 3 4; do
     python recover_softmax.py \
-        -i test_result \
-        -o "test_result_recover/preliminary_phase/fold${fold}" \
+        -i "${batch_test_result}" \
+        -o "${batch_test_result_recover}/preliminary_phase/fold${fold}" \
         -m preliminary_phase \
         -f "fold${fold}" \
         --case-manifest "$case_manifest"
 done
 
 python -m ensemble_predictions -f \
-    test_result_recover/preliminary_phase/fold0 \
-    test_result_recover/preliminary_phase/fold1 \
-    test_result_recover/preliminary_phase/fold2 \
-    test_result_recover/preliminary_phase/fold3 \
-    test_result_recover/preliminary_phase/fold4 \
-    -o test_ensemble/ \
+    "${batch_test_result_recover}/preliminary_phase/fold0" \
+    "${batch_test_result_recover}/preliminary_phase/fold1" \
+    "${batch_test_result_recover}/preliminary_phase/fold2" \
+    "${batch_test_result_recover}/preliminary_phase/fold3" \
+    "${batch_test_result_recover}/preliminary_phase/fold4" \
+    -o "${batch_test_ensemble}/" \
     --npz
 
 python threshold_redirect.py \
-    -i test_ensemble/ \
+    -i "${batch_test_ensemble}/" \
     -o "$batch_output_root" \
     --case-manifest "$case_manifest"

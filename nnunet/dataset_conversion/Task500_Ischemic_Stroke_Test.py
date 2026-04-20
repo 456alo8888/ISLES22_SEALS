@@ -39,7 +39,7 @@ def respacing_file(image_file, target_spacing, resample_method):
     origin_spacing = np.array(image_file.GetSpacing())
     origin_size = np.array(image_file.GetSize())
     factor = np.array(target_spacing / origin_spacing)
-    target_size = (origin_size / factor).astype(np.uint8)
+    target_size = np.maximum(np.round(origin_size / factor).astype(np.int64), 1)
 
     resampler_image.SetReferenceImage(image_file)
     resampler_image.SetOutputSpacing(target_spacing.tolist())

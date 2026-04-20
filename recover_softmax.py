@@ -48,7 +48,9 @@ def load_pkl(pkl_path):
 
 def get_case_paths(case_id, manifest_map=None, single_case_root=None):
     if manifest_map:
-        case = manifest_map[case_id]
+        case = manifest_map.get(case_id)
+        if case is None:
+            raise KeyError(f"Case {case_id} is not present in the active case manifest")
         return case["dwi_path"], case["adc_path"]
 
     case_paths = load_case_paths(single_case_root or resolve_input_root())
@@ -72,6 +74,9 @@ def main():
 
     for file_npz in tqdm(files_npzs):
         case_id = os.path.splitext(os.path.basename(file_npz))[0]
+        if manifest_map and case_id not in manifest_map:
+            print(f"Skipping prediction not present in case manifest: {case_id}")
+            continue
         file_pkl = file_npz.replace("npz", "pkl")
         predict_softmax = np.load(file_npz)["softmax"]
         pkl_dict = load_pkl(file_pkl)

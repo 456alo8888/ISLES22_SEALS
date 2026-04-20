@@ -2,3 +2,14 @@ test_result/
 data/
 nnUNet_trained_models.zip
 input/
+input_remaining/
+output/
+test_ensemble_batch/
+test_ensemble_resume/
+test_result/
+test_result_batch/
+test_result_recover_batch/
+test_result_recover_resume/
+test_result_resume/
+test_result_recover/
+test_ensemble/

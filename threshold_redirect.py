@@ -30,14 +30,22 @@ def main():
     os.makedirs(args.output_folder, exist_ok=True)
     manifest_map = load_case_manifest(args.case_manifest) if args.case_manifest else None
     predictions = sorted(glob(os.path.join(args.input_folder, "*.mha")))
+    prediction_map = {}
 
-    if not predictions:
+    for path in predictions:
+        case_id = os.path.splitext(os.path.basename(path))[0]
+        if manifest_map and case_id not in manifest_map:
+            print(f"Skipping prediction not present in case manifest: {case_id}")
+            continue
+        prediction_map[case_id] = path
+
+    if not prediction_map:
         if manifest_map:
             case_ids = sorted(manifest_map.keys())
         else:
             case_ids = ["ISLES22_0001"]
     else:
-        case_ids = [os.path.splitext(os.path.basename(path))[0] for path in predictions]
+        case_ids = sorted(prediction_map.keys())
 
     case_results = []
     single_case_paths = None if manifest_map else load_case_paths(resolve_input_root())
@@ -50,7 +58,7 @@ def main():
             dwi_path = single_case_paths["dwi_path"]
 
         image_file = sitk.ReadImage(dwi_path)
-        pred_path = os.path.join(args.input_folder, f"{case_id}.mha")
+        pred_path = prediction_map.get(case_id, os.path.join(args.input_folder, f"{case_id}.mha"))
         if os.path.exists(pred_path):
             pred_image = sitk.ReadImage(pred_path)
         else:

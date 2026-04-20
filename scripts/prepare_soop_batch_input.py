@@ -10,6 +10,10 @@ import SimpleITK as sitk
 DEFAULT_CSV = "/mnt/disk1/hieupc/4gpus-Stroke-outcome-prediction-code/code/utils/SOOP_modalities_dataset.csv"
 
 
+def normalize_column_name(name):
+    return str(name).strip().lstrip("\ufeff[").rstrip("]")
+
+
 def str_to_bool(value):
     return str(value).strip() in {"1", "true", "True", "yes"}
 
@@ -69,16 +73,19 @@ def main():
 
     with open(args.csv_path, "r", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
+        if reader.fieldnames:
+            reader.fieldnames = [normalize_column_name(name) for name in reader.fieldnames]
         for row in reader:
             summary["total_rows"] += 1
-            subject_id = row["subject_id"].strip()
+            normalized_row = {normalize_column_name(key): value for key, value in row.items()}
+            subject_id = normalized_row["subject_id"].strip()
             if subset and subject_id not in subset:
                 continue
 
-            has_trace = str_to_bool(row.get("has_trace"))
-            has_adc = str_to_bool(row.get("has_adc"))
-            trace_path = Path(row["trace_path"])
-            adc_path = Path(row["adc_path"])
+            has_trace = str_to_bool(normalized_row.get("has_trace"))
+            has_adc = str_to_bool(normalized_row.get("has_adc"))
+            trace_path = Path(normalized_row["trace_path"])
+            adc_path = Path(normalized_row["adc_path"])
 
             if not (has_trace and has_adc):
                 summary["skipped"].append(
