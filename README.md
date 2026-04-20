@@ -62,6 +62,51 @@ bash nnunet_launcher.sh
 
 After the results are generated, you can check the results in `/output/images/stroke-lesion-segmentation/` folder.
 
+## Batch SOOP Workflow
+
+### Phase 1: Stage `.nii.gz` Subjects As `.mha`
+
+Prepare per-subject input folders from the SOOP CSV:
+
+```bash
+python scripts/prepare_soop_batch_input.py \
+  --csv-path /mnt/disk1/hieupc/4gpus-Stroke-outcome-prediction-code/code/utils/SOOP_modalities_dataset.csv \
+  --output-root input
+```
+
+This creates folders like:
+
+```text
+input/sub-100/dwi-brain-mri/dwi.mha
+input/sub-100/adc-brain-mri/adc.mha
+```
+
+Validate a subset:
+
+```bash
+python scripts/validate_soop_batch_input.py \
+  --csv-path /mnt/disk1/hieupc/4gpus-Stroke-outcome-prediction-code/code/utils/SOOP_modalities_dataset.csv \
+  --input-root input \
+  --subjects sub-100,sub-1001 \
+  --check-source-metadata
+```
+
+### Phase 2: Batch Segmentation
+
+Run batch conversion, inference, recovery, ensemble, and final export:
+
+```bash
+BATCH_INPUT_ROOT=input \
+NNUNET_GPU=0 \
+bash nnunet_launcher_batch.sh
+```
+
+Batch outputs are written to:
+
+```text
+output/batch/images/stroke-lesion-segmentation/
+```
+
 ## Questions
 
 Please contact gtabris@buaa.edu.cn

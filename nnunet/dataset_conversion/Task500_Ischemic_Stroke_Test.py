@@ -11,147 +11,150 @@
 #    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
-from glob import glob
+import argparse
+import os
 
 import numpy as np
 import SimpleITK as sitk
 
-from batchgenerators.utilities.file_and_folder_operations import *
+from batchgenerators.utilities.file_and_folder_operations import join, maybe_mkdir_p
 from nnunet.dataset_conversion.utils import generate_dataset_json
-from nnunet.paths import nnUNet_raw_data, preprocessing_output_dir
-from nnunet.utilities.file_conversions import convert_2d_image_to_nifti
-from nnunet.isles22_input import optional_single_image, require_single_image, resolve_input_root
-
-class ISLES22():
-    def __init__(self, root):
-        self.root  = root
-        self.data_dict = {}
-
-    def load_data(self):
-        dwi_folder    = 'dwi-brain-mri'
-        adc_folder    = 'adc-brain-mri'
-        flair_folder  = 'flair-brain-mri'
-
-        self.dwi_path   = require_single_image(self.root, dwi_folder)
-        self.adc_path   = require_single_image(self.root, adc_folder)
-        self.flair_path = optional_single_image(self.root, flair_folder)
+from nnunet.isles22_input import (
+    enumerate_batch_cases,
+    load_case_paths,
+    resolve_batch_input_root,
+    resolve_input_root,
+    save_case_manifest,
+)
+from nnunet.paths import nnUNet_raw_data
 
 
 def respacing_file(image_file, target_spacing, resample_method):
-    """
-    Respacing file to target space size
-    :param image_file: sitk.SimpleITK.Image
-    :param target_spacing: np.array([H_space, W_space, D_space])
-    :resample_method: SimpleITK resample method (e.g. SimpleITK.sitkLinear, SimpleITK.sitkNearestNeighbor)
-    :return: resampled_image_file: sitk.SimpleITK.Image
-    """
     if type(image_file) is not sitk.SimpleITK.Image:
         image_file = sitk.ReadImage(image_file)
     if not isinstance(target_spacing, np.ndarray):
         target_spacing = np.array(target_spacing)
 
-    # initialize resampler
     resampler_image = sitk.ResampleImageFilter()
+    origin_spacing = np.array(image_file.GetSpacing())
+    origin_size = np.array(image_file.GetSize())
+    factor = np.array(target_spacing / origin_spacing)
+    target_size = (origin_size / factor).astype(np.uint8)
 
-    # set target size
-    origin_direction = np.array(image_file.GetDirection())
-    origin_spacing   = np.array(image_file.GetSpacing())
-    origin_size      = np.array(image_file.GetSize())
-    factor           = np.array(target_spacing / origin_spacing)
-    target_size      = (origin_size / factor).astype(np.uint8)
-
-    # set the parameters of image
-    resampler_image.SetReferenceImage(image_file)  # set rasampled image meta data same to origin data
-    resampler_image.SetOutputSpacing(target_spacing.tolist())  # set target image space
-    resampler_image.SetSize(target_size.tolist())  # set target image size
+    resampler_image.SetReferenceImage(image_file)
+    resampler_image.SetOutputSpacing(target_spacing.tolist())
+    resampler_image.SetSize(target_size.tolist())
     resampler_image.SetTransform(sitk.Transform(3, sitk.sitkIdentity))
     resampler_image.SetInterpolator(resample_method)
-
-    # launch the resampler
-    resampled_image_file = resampler_image.Execute(image_file)
-
-    return resampled_image_file
+    return resampler_image.Execute(image_file)
 
 
 def reimplement_resize(image_file, target_file, resample_method=sitk.sitkLinear):
-    """
-    Respacing file to target space size
-    :param image_file: sitk.SimpleITK.Image
-    :param target_spacing: np.array([H_space, W_space, D_space])
-    :resample_method: SimpleITK resample method (e.g. SimpleITK.sitkLinear, SimpleITK.sitkNearestNeighbor)
-    :return: resampled_image_file: sitk.SimpleITK.Image
-    """
-    # pdb.set_trace()
     if isinstance(image_file, str):
         image_file = sitk.ReadImage(image_file)
     elif type(image_file) is not sitk.SimpleITK.Image:
-        assert False, "Unknown data type to respaceing!"
-    
+        raise AssertionError("Unknown data type to respaceing!")
+
     if isinstance(target_file, str):
         target_file = sitk.ReadImage(target_file)
     elif type(target_file) is not sitk.SimpleITK.Image:
-        assert False, "Unknown data type to respaceing!"
+        raise AssertionError("Unknown data type to respaceing!")
 
-    # set target size
-    target_origing   = target_file.GetOrigin()
-    target_direction = target_file.GetDirection()
-    target_spacing   = target_file.GetSpacing()
-    target_size      = target_file.GetSize()
-
-    # pdb.set_trace()
-    # initialize resampler
     resampler_image = sitk.ResampleImageFilter()
-    # set the parameters of image
-    resampler_image.SetReferenceImage(image_file)  # set rasampled image meta data same to origin data
-    resampler_image.SetOutputOrigin(target_origing)
-    resampler_image.SetOutputDirection(target_direction)  # set target image space
-    resampler_image.SetOutputSpacing(target_spacing)  # set target image space
-    resampler_image.SetSize(target_size)  # set target image size
+    resampler_image.SetReferenceImage(image_file)
+    resampler_image.SetOutputOrigin(target_file.GetOrigin())
+    resampler_image.SetOutputDirection(target_file.GetDirection())
+    resampler_image.SetOutputSpacing(target_file.GetSpacing())
+    resampler_image.SetSize(target_file.GetSize())
     if resample_method == sitk.sitkNearestNeighbor:
         resampler_image.SetOutputPixelType(sitk.sitkUInt8)
     else:
         resampler_image.SetOutputPixelType(sitk.sitkFloat32)
     resampler_image.SetTransform(sitk.Transform(3, sitk.sitkIdentity))
     resampler_image.SetInterpolator(resample_method)
+    return resampler_image.Execute(image_file)
 
-    # launch the resampler
-    resampled_image_file = resampler_image.Execute(image_file)
-    # pdb.set_trace()
 
-    return resampled_image_file
+def convert_case(case, target_images_ts):
+    dwi_file = respacing_file(
+        case["dwi_path"], target_spacing=[1, 1, 1], resample_method=sitk.sitkLinear
+    )
+    adc_file = reimplement_resize(
+        case["adc_path"], target_file=dwi_file, resample_method=sitk.sitkLinear
+    )
+
+    sitk.WriteImage(dwi_file, join(target_images_ts, f'{case["case_id"]}_0000.nii.gz'))
+    sitk.WriteImage(adc_file, join(target_images_ts, f'{case["case_id"]}_0001.nii.gz'))
+
+
+def single_case_from_root(raw_data_dir):
+    paths = load_case_paths(raw_data_dir)
+    return [
+        {
+            "subject_id": "ISLES22_0001",
+            "case_id": "ISLES22_0001",
+            "root": raw_data_dir,
+            **paths,
+        }
+    ]
+
+
+def build_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--task-name", default="Task500_Ischemic_Stroke_Test")
+    parser.add_argument("--batch-input-root", default=None)
+    parser.add_argument("--case-manifest", default=None)
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
+
+    if args.batch_input_root:
+        batch_root = resolve_batch_input_root(args.batch_input_root)
+        cases = enumerate_batch_cases(batch_root)
+        if not cases:
+            raise FileNotFoundError(
+                f"No staged subject folders with DWI/ADC modalities found under {batch_root}"
+            )
+    else:
+        raw_data_dir = resolve_input_root()
+        cases = single_case_from_root(raw_data_dir)
+
+    target_base = join(nnUNet_raw_data, args.task_name)
+    target_images_tr = join(target_base, "imagesTr")
+    target_labels_tr = join(target_base, "labelsTr")
+    target_images_ts = join(target_base, "imagesTs")
+    target_labels_ts = join(target_base, "labelsTs")
+
+    maybe_mkdir_p(target_base)
+    maybe_mkdir_p(target_images_tr)
+    maybe_mkdir_p(target_labels_tr)
+    maybe_mkdir_p(target_images_ts)
+    maybe_mkdir_p(target_labels_ts)
+
+    for entry in os.listdir(target_images_ts):
+        if entry.endswith(".nii.gz"):
+            os.remove(join(target_images_ts, entry))
+
+    for case in cases:
+        convert_case(case, target_images_ts)
+
+    generate_dataset_json(
+        output_file=join(target_base, "dataset.json"),
+        imagesTr_dir=target_images_tr,
+        imagesTs_dir=target_images_ts,
+        modalities=("dwi", "adc"),
+        labels={0: "background", 1: "Ischemic Stroke"},
+        dataset_name=args.task_name,
+        sort_keys=True,
+        license="ISLES22 license",
+    )
+
+    if args.case_manifest:
+        maybe_mkdir_p(os.path.dirname(args.case_manifest))
+        save_case_manifest(args.case_manifest, cases)
+
 
 if __name__ == "__main__":
-
-    task_name = "Task500_Ischemic_Stroke_Test"
-    raw_data_dir = resolve_input_root()
-    dataset_ISLES22 = ISLES22(raw_data_dir)
-    dataset_ISLES22.load_data()
-
-    target_base = join(nnUNet_raw_data, task_name)
-    target_imagesTr = join(target_base, "imagesTr")
-    target_labelsTr = join(target_base, "labelsTr")
-    target_imagesTs = join(target_base, "imagesTs")
-    target_labelsTs = join(target_base, "labelsTs")
-    
-    maybe_mkdir_p(target_base)
-    maybe_mkdir_p(target_imagesTr)
-    maybe_mkdir_p(target_labelsTr)
-    maybe_mkdir_p(target_imagesTs)
-    maybe_mkdir_p(target_labelsTs)
-
-    dwi_file = respacing_file(dataset_ISLES22.dwi_path, target_spacing=[1, 1, 1], resample_method=sitk.sitkLinear)
-    adc_file = reimplement_resize(dataset_ISLES22.adc_path, target_file=dwi_file, resample_method=sitk.sitkLinear)
-    # flair_file = reimplement_resize(dataset_ISLES22.flair_path, target_file=dwi_file, resample_method=sitk.sitkLinear)
-
-    sitk.WriteImage(dwi_file,   join(target_imagesTs, 'ISLES22_' + '0001' + '_0000.nii.gz'))
-    sitk.WriteImage(adc_file,   join(target_imagesTs, 'ISLES22_' + '0001' + '_0001.nii.gz'))
-    # sitk.WriteImage(flair_file, join(target_imagesTs, 'ISLES22_' + '0001' + '_0002.nii.gz'))
-
-    generate_dataset_json(output_file=join(target_base, 'dataset.json'),
-                          imagesTr_dir=target_imagesTr, 
-                          imagesTs_dir=target_imagesTs, 
-                          modalities=('dwi', 'adc'),
-                          labels={0:'background', 1: 'Ischemic Stroke'}, 
-                          dataset_name=task_name, 
-                          sort_keys=True, 
-                          license="ISLES22 license")
+    main()

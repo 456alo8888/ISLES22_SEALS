@@ -1,129 +1,90 @@
-from glob import glob
-import os
-import sys
-import json
-import shutil
 import argparse
-from tkinter import Image
-from matplotlib import image
+import json
+import os
+from glob import glob
+
 import numpy as np
 import SimpleITK as sitk
-from nnunet.isles22_input import optional_single_image, require_single_image, resolve_input_root
+
+from nnunet.isles22_input import load_case_manifest, load_case_paths, resolve_input_root
+
 
 def json_writer(json_path, data):
-    with open(str(json_path), "w") as f:
-        json.dump(data, f)
+    with open(str(json_path), "w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
 
 
-class ISLES22():
-    def __init__(self, root):
-        self.root  = root
-        self.data_dict = {}
-
-    def load_data(self):
-        dwi_folder    = 'dwi-brain-mri'
-        adc_folder    = 'adc-brain-mri'
-        flair_folder  = 'flair-brain-mri'
-
-        self.dwi_path   = require_single_image(self.root, dwi_folder)
-        self.adc_path   = require_single_image(self.root, adc_folder)
-        self.flair_path = optional_single_image(self.root, flair_folder)
-
-def reimplement_resize(image_file, target_file, resample_method=sitk.sitkLinear):
-    """
-    Respacing file to target space size
-    :param image_file: sitk.SimpleITK.Image
-    :param target_spacing: np.array([H_space, W_space, D_space])
-    :resample_method: SimpleITK resample method (e.g. SimpleITK.sitkLinear, SimpleITK.sitkNearestNeighbor)
-    :return: resampled_image_file: sitk.SimpleITK.Image
-    """
-    # pdb.set_trace()
-    if isinstance(image_file, str):
-        image_file = sitk.ReadImage(image_file)
-    elif isinstance(image_file, np.ndarray):
-        image_file = sitk.GetImageFromArray(image_file)
-    elif type(image_file) is not sitk.SimpleITK.Image:
-        assert False, "Unknown data type to respaceing!"
-    
-    if isinstance(target_file, str):
-        target_file = sitk.ReadImage(target_file)
-    elif type(target_file) is not sitk.SimpleITK.Image:
-        assert False, "Unknown data type to respaceing!"
+def case_output_filename(case_id, manifest_case):
+    if manifest_case:
+        return f"{manifest_case['subject_id']}.mha"
+    return "dwi.mha"
 
 
-
-    # set target size
-    target_origing   = target_file.GetOrigin()
-    target_direction = target_file.GetDirection()
-    target_spacing   = target_file.GetSpacing()
-    target_size      = target_file.GetSize()
-
-    # pdb.set_trace()
-    # initialize resampler
-    resampler_image = sitk.ResampleImageFilter()
-    # set the parameters of image
-    resampler_image.SetReferenceImage(image_file)  # set rasampled image meta data same to origin data
-    resampler_image.SetOutputOrigin(target_origing)
-    resampler_image.SetOutputDirection(target_direction)  # set target image space
-    resampler_image.SetOutputSpacing(target_spacing)  # set target image space
-    resampler_image.SetSize(target_size)  # set target image size
-    if resample_method == sitk.sitkNearestNeighbor:
-        resampler_image.SetOutputPixelType(sitk.sitkUInt8)
-    else:
-        resampler_image.SetOutputPixelType(sitk.sitkFloat32)
-    resampler_image.SetTransform(sitk.Transform(3, sitk.sitkIdentity))
-    resampler_image.SetInterpolator(resample_method)
-
-    # launch the resampler
-    resampled_image_file = resampler_image.Execute(image_file)
-    # pdb.set_trace()
-
-    return resampled_image_file
-
-if __name__=='__main__':
+def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--input_folder', help="root_path of 5 folds", required=True)
-    parser.add_argument('-o', "--output_folder", required=True, help="folder for saving evaluation csv")
+    parser.add_argument("-i", "--input_folder", required=True)
+    parser.add_argument("-o", "--output_folder", required=True)
+    parser.add_argument("--case-manifest", default=None)
     args = parser.parse_args()
 
-    input_folder  = args.input_folder
-    output_folder = args.output_folder
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+    os.makedirs(args.output_folder, exist_ok=True)
+    manifest_map = load_case_manifest(args.case_manifest) if args.case_manifest else None
+    predictions = sorted(glob(os.path.join(args.input_folder, "*.mha")))
 
-    # load origin mha file path
-    raw_data_dir = resolve_input_root()
-    dataset_ISLES22 = ISLES22(raw_data_dir)
-    dataset_ISLES22.load_data()
+    if not predictions:
+        if manifest_map:
+            case_ids = sorted(manifest_map.keys())
+        else:
+            case_ids = ["ISLES22_0001"]
+    else:
+        case_ids = [os.path.splitext(os.path.basename(path))[0] for path in predictions]
 
-    # load mha image
-    image_file = sitk.ReadImage(dataset_ISLES22.dwi_path)
-
-    # load prediction
-    try:
-        pred_file = glob(os.path.join(input_folder, '*.mha'))[0]
-        pred_image = sitk.ReadImage(pred_file)
-    except:
-        print('no prediction! generating full 0 mask!')
-        image_array = sitk.GetArrayFromImage(image_file)
-        pred_array  = np.zeros_like(image_array)
-        pred_image  = sitk.GetImageFromArray(pred_array)
-
-    pred_image.SetOrigin(image_file.GetOrigin())
-    pred_image.SetSpacing(image_file.GetSpacing())
-    pred_image.SetDirection(image_file.GetDirection())
-
-    sitk.WriteImage(pred_image, os.path.join(output_folder, dataset_ISLES22.dwi_path.split('/')[-1]))
-
-    # dump the result to json file
     case_results = []
-    json_result =   {"outputs": [dict(
-                                    type="Image", 
-                                    slug="stroke-lesion-segmentation",
-                                    filename=str(dataset_ISLES22.dwi_path.split('/')[-1]))],
-                    "inputs": [dict(
-                                    type="Image", 
-                                    slug="dwi-brain-mri",
-                                    filename=str(dataset_ISLES22.dwi_path.split('/')[-1]))]}
-    case_results.append(json_result)
-    json_writer(os.path.join(output_folder, 'result.json'), case_results)
+    single_case_paths = None if manifest_map else load_case_paths(resolve_input_root())
+
+    for case_id in case_ids:
+        manifest_case = manifest_map.get(case_id) if manifest_map else None
+        if manifest_case:
+            dwi_path = manifest_case["dwi_path"]
+        else:
+            dwi_path = single_case_paths["dwi_path"]
+
+        image_file = sitk.ReadImage(dwi_path)
+        pred_path = os.path.join(args.input_folder, f"{case_id}.mha")
+        if os.path.exists(pred_path):
+            pred_image = sitk.ReadImage(pred_path)
+        else:
+            image_array = sitk.GetArrayFromImage(image_file)
+            pred_array = np.zeros_like(image_array)
+            pred_image = sitk.GetImageFromArray(pred_array)
+
+        pred_image.SetOrigin(image_file.GetOrigin())
+        pred_image.SetSpacing(image_file.GetSpacing())
+        pred_image.SetDirection(image_file.GetDirection())
+
+        output_filename = case_output_filename(case_id, manifest_case)
+        sitk.WriteImage(pred_image, os.path.join(args.output_folder, output_filename))
+        case_results.append(
+            {
+                "outputs": [
+                    {
+                        "type": "Image",
+                        "slug": "stroke-lesion-segmentation",
+                        "filename": output_filename,
+                    }
+                ],
+                "inputs": [
+                    {
+                        "type": "Image",
+                        "slug": "dwi-brain-mri",
+                        "filename": output_filename,
+                    }
+                ],
+            }
+        )
+
+    json_writer(os.path.join(args.output_folder, "result.json"), case_results)
+
+
+if __name__ == "__main__":
+    main()
