@@ -1,4 +1,0 @@
-interface:
-  display_name: "Create Plan"
-  short_description: "Create detailed implementation plans"
-  default_prompt: "Use $create-plan to research a task and draft an implementation plan."
